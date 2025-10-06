@@ -127,9 +127,24 @@ function App() {
   return (
     <div style={{ padding: 20 }}>
       <h2>WebRTC Audio Call App</h2>
-      <p>
-        Your ID: <strong>{myId}</strong>
-      </p>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-start",
+          gap: 20,
+        }}
+      >
+        <p>
+          Your ID: <strong>{myId}</strong>
+        </p>
+        <button
+          onClick={() => navigator.clipboard.writeText(myId)}
+          style={{ marginLeft: 10 }}
+        >
+          Copy My ID
+        </button>
+      </div>
 
       <input
         type="text"
