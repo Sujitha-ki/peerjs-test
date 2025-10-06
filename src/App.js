@@ -17,12 +17,15 @@ function App() {
   const callStartTimeRef = useRef(null);
 
   useEffect(() => {
-    const p = new Peer();
+    const savedId = localStorage.getItem("myPeerId");
+    const p = new Peer(savedId || undefined);
     setPeer(p);
 
-    p.on("open", (id) => setMyId(id));
+    p.on("open", (id) => {
+      setMyId(id);
+      if (!savedId) localStorage.setItem("myPeerId", id);
+    });
 
-    // Listen for incoming calls
     p.on("call", (call) => {
       setIncomingCalls((prev) => [...prev, call]);
     });
