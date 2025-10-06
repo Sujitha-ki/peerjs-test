@@ -43,15 +43,21 @@ function App() {
       localStreamRef.current = stream;
       call.answer(stream);
 
-      startRecording(stream);
-      setCalls((prev) => [...prev, call]);
-      setIncomingCalls((prev) => prev.filter((c) => c !== call));
+      call.on("stream", (remoteStream) => {
+        playAudio(remoteStream);
 
-      call.on("stream", (remoteStream) => playAudio(remoteStream));
+        // Only start recording after remote stream is available
+        if (!isRecording) {
+          startRecording(mergeStreams(localStreamRef.current, [remoteStream]));
+        }
+      });
+
       call.on("close", () => handleCallEnded(call));
 
-      if (calls.length === 0) startTimer();
+      setCalls((prev) => [...prev, call]);
+      setIncomingCalls((prev) => prev.filter((c) => c !== call));
       callStartTimeRef.current = Date.now();
+      startTimer();
     });
   };
 
@@ -71,6 +77,7 @@ function App() {
   };
 
   const playAudio = (stream) => {
+    // Add remote stream for playback
     remoteStreamsRef.current.push(stream);
 
     const audioEl = document.createElement("audio");
@@ -78,13 +85,6 @@ function App() {
     audioEl.autoplay = true;
     audioEl.id = "remote-audio-" + Math.random();
     document.body.appendChild(audioEl);
-
-    // If already recording, update the recording stream
-    if (isRecording && localStreamRef.current) {
-      startRecording(
-        mergeStreams(localStreamRef.current, remoteStreamsRef.current)
-      );
-    }
   };
 
   const handleCallEnded = (call) => {
@@ -157,8 +157,9 @@ function App() {
   };
 
   const startRecording = (stream) => {
-    const combinedStream = mergeStreams(stream, remoteStreamsRef.current);
-    const recorder = new MediaRecorder(combinedStream);
+    if (isRecording) return; // prevent multiple recorders
+
+    const recorder = new MediaRecorder(stream);
     setMediaRecorder(recorder);
     setRecordedChunks([]);
 
@@ -172,21 +173,16 @@ function App() {
 
   const stopRecording = async () => {
     if (!mediaRecorder) return;
-
     mediaRecorder.stop();
     setIsRecording(false);
 
     mediaRecorder.onstop = async () => {
       const blob = new Blob(recordedChunks, { type: "audio/webm" });
 
-      // Ask user for location
       const fileHandle = await window.showSaveFilePicker({
         suggestedName: `Call-${new Date().toISOString()}.webm`,
         types: [
-          {
-            description: "Audio Files",
-            accept: { "audio/webm": [".webm"] },
-          },
+          { description: "Audio Files", accept: { "audio/webm": [".webm"] } },
         ],
       });
 
