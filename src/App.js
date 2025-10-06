@@ -11,39 +11,53 @@ function App() {
   const [callLogs, setCallLogs] = useState(
     JSON.parse(localStorage.getItem("callLogs")) || []
   );
-  const callStartTimeRef = useRef(null); // track start time
+
   const localStreamRef = useRef(null);
   const timerRef = useRef(null);
+  const callStartTimeRef = useRef(null);
 
   useEffect(() => {
     const p = new Peer();
     setPeer(p);
 
-    p.on("open", (id) => {
-      setMyId(id);
-      console.log("My Peer ID:", id);
-    });
+    p.on("open", (id) => setMyId(id));
 
     // Listen for incoming calls
     p.on("call", (call) => {
-      // Add to incoming calls list
       setIncomingCalls((prev) => [...prev, call]);
     });
 
     return () => p.destroy();
   }, []);
 
+  // Accept incoming call
   const acceptCall = (call) => {
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       localStreamRef.current = stream;
-      call.answer(stream); // answer the call
-      setCalls((prev) => [...prev, call]); // store active call
-      setIncomingCalls((prev) => prev.filter((c) => c !== call)); // remove from incoming
+      call.answer(stream);
+      setCalls((prev) => [...prev, call]);
+      setIncomingCalls((prev) => prev.filter((c) => c !== call));
+
       call.on("stream", (remoteStream) => playAudio(remoteStream));
       call.on("close", () => handleCallEnded(call));
 
-      // start timer if first call
       if (calls.length === 0) startTimer();
+      callStartTimeRef.current = Date.now();
+    });
+  };
+
+  // Start outgoing call
+  const callPeer = (remoteId) => {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+      localStreamRef.current = stream;
+      const call = peer.call(remoteId, stream);
+
+      setCalls((prev) => [...prev, call]);
+      call.on("stream", (remoteStream) => playAudio(remoteStream));
+      call.on("close", () => handleCallEnded(call));
+
+      if (calls.length === 0) startTimer();
+      callStartTimeRef.current = Date.now();
     });
   };
 
@@ -55,49 +69,23 @@ function App() {
     document.body.appendChild(audioEl);
   };
 
-  const callPeer = (remoteId) => {
-    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-      localStreamRef.current = stream;
-      const call = peer.call(remoteId, stream);
-      setCalls((prev) => [...prev, call]);
-
-      // start timer
-      callStartTimeRef.current = Date.now();
-
-      call.on("stream", (remoteStream) => playAudio(remoteStream));
-
-      call.on("close", () => handleCallEnded(remoteId));
-    });
-  };
-
-  // When receiving a call
-  peer.on("call", (call) => {
-    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-      localStreamRef.current = stream;
-      call.answer(stream);
-      setCalls((prev) => [...prev, call]);
-
-      // start timer
-      callStartTimeRef.current = Date.now();
-
-      call.on("stream", (remoteStream) => playAudio(remoteStream));
-      call.on("close", () => handleCallEnded(call.peer));
-    });
-  });
-
-  const handleCallEnded = (peerId) => {
+  const handleCallEnded = (call) => {
     const endTime = Date.now();
     const duration = callStartTimeRef.current
       ? Math.floor((endTime - callStartTimeRef.current) / 1000)
       : 0;
 
-    const newLog = { peerId, duration, time: new Date().toLocaleString() };
+    const newLog = {
+      peerId: call.peer,
+      duration,
+      time: new Date().toLocaleString(),
+    };
     const updatedLogs = [newLog, ...callLogs];
     setCallLogs(updatedLogs);
     localStorage.setItem("callLogs", JSON.stringify(updatedLogs));
 
-    // clean up
-    setCalls((prev) => prev.filter((c) => c.peer !== peerId));
+    setCalls((prev) => prev.filter((c) => c !== call));
+    if (calls.length === 1) stopTimer(); // stop timer if last call ended
     callStartTimeRef.current = null;
   };
 
@@ -125,10 +113,12 @@ function App() {
     calls.forEach((c) => c.close());
     setCalls([]);
     stopTimer();
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     }
+
     document
       .querySelectorAll("audio[id^='remote-audio-']")
       .forEach((el) => el.remove());
@@ -149,7 +139,7 @@ function App() {
         style={{ width: 300 }}
       />
       <button
-        onClick={() => remoteIds.forEach((id) => callPeer(id))}
+        onClick={() => remoteIds.forEach(callPeer)}
         style={{ marginLeft: 10 }}
       >
         Call
@@ -175,25 +165,20 @@ function App() {
 
       {/* End Call & Duration */}
       {calls.length > 0 && (
-        <>
+        <div style={{ marginTop: 10 }}>
           <button
             onClick={endCalls}
-            style={{
-              marginTop: 10,
-              marginLeft: 20,
-              background: "red",
-              color: "#fff",
-              padding: "5px 12px",
-            }}
+            style={{ background: "red", color: "#fff", padding: "5px 12px" }}
           >
             End Call
           </button>
           <span style={{ marginLeft: 20, fontWeight: "bold" }}>
             Duration: {formatTime(callDuration)}
           </span>
-        </>
+        </div>
       )}
 
+      {/* Call Logs */}
       <div style={{ marginTop: 20 }}>
         <h3>Call Logs</h3>
         {callLogs.length === 0 ? (
