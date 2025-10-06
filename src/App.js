@@ -6,7 +6,9 @@ function App() {
   const [myId, setMyId] = useState("");
   const [remoteIds, setRemoteIds] = useState([]);
   const [calls, setCalls] = useState([]); // store active call objects
+  const [callDuration, setCallDuration] = useState(0);
   const localStreamRef = useRef(null);
+  const timerRef = useRef(null);
 
   useEffect(() => {
     const p = new Peer();
@@ -22,46 +24,76 @@ function App() {
       navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
         localStreamRef.current = stream;
         call.answer(stream);
-        setCalls((prev) => [...prev, call]); // store call
+        setCalls((prev) => [...prev, call]);
         call.on("stream", (remoteStream) => playAudio(remoteStream));
+
+        // Start timer if first call
+        if (calls.length === 0) startTimer();
+
+        // Remove call when it ends
+        call.on("close", () => handleCallEnded(call));
       });
     });
 
     return () => p.destroy();
+    // eslint-disable-next-line
   }, []);
 
-  // Play remote audio
   const playAudio = (stream) => {
     const audioEl = document.createElement("audio");
     audioEl.srcObject = stream;
     audioEl.autoplay = true;
-    audioEl.id = "remote-audio-" + Math.random(); // unique id
+    audioEl.id = "remote-audio-" + Math.random();
     document.body.appendChild(audioEl);
   };
 
-  // Start call to remote peers
   const callPeer = (remoteId) => {
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       localStreamRef.current = stream;
       const call = peer.call(remoteId, stream);
       setCalls((prev) => [...prev, call]);
       call.on("stream", (remoteStream) => playAudio(remoteStream));
+
+      if (calls.length === 0) startTimer();
+      call.on("close", () => handleCallEnded(call));
     });
   };
 
-  // End all calls
+  const handleCallEnded = (call) => {
+    setCalls((prev) => prev.filter((c) => c !== call));
+    if (calls.length <= 1) stopTimer(); // stop timer if no calls left
+  };
+
+  const startTimer = () => {
+    setCallDuration(0);
+    timerRef.current = setInterval(() => {
+      setCallDuration((prev) => prev + 1);
+    }, 1000);
+  };
+
+  const stopTimer = () => {
+    clearInterval(timerRef.current);
+    setCallDuration(0);
+  };
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs
+      .toString()
+      .padStart(2, "0")}`;
+  };
+
   const endCalls = () => {
-    // Close all PeerJS calls
     calls.forEach((c) => c.close());
     setCalls([]);
+    stopTimer();
 
-    // Stop local audio stream
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     }
 
-    // Remove all remote audio elements
     document
       .querySelectorAll("audio[id^='remote-audio-']")
       .forEach((el) => el.remove());
@@ -89,17 +121,22 @@ function App() {
       </button>
 
       {calls.length > 0 && (
-        <button
-          onClick={endCalls}
-          style={{
-            marginLeft: 10,
-            background: "red",
-            color: "#fff",
-            padding: "5px 12px",
-          }}
-        >
-          End Call
-        </button>
+        <>
+          <button
+            onClick={endCalls}
+            style={{
+              marginLeft: 10,
+              background: "red",
+              color: "#fff",
+              padding: "5px 12px",
+            }}
+          >
+            End Call
+          </button>
+          <span style={{ marginLeft: 20, fontWeight: "bold" }}>
+            Duration: {formatTime(callDuration)}
+          </span>
+        </>
       )}
     </div>
   );
