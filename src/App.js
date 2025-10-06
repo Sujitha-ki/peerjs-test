@@ -5,7 +5,8 @@ function App() {
   const [peer, setPeer] = useState(null);
   const [myId, setMyId] = useState("");
   const [remoteIds, setRemoteIds] = useState([]);
-  const [calls, setCalls] = useState([]); // store active call objects
+  const [calls, setCalls] = useState([]); // active calls
+  const [incomingCalls, setIncomingCalls] = useState([]); // pending incoming
   const [callDuration, setCallDuration] = useState(0);
   const localStreamRef = useRef(null);
   const timerRef = useRef(null);
@@ -15,29 +16,32 @@ function App() {
     setPeer(p);
 
     p.on("open", (id) => {
-      console.log("My Peer ID:", id);
       setMyId(id);
+      console.log("My Peer ID:", id);
     });
 
     // Listen for incoming calls
     p.on("call", (call) => {
-      navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-        localStreamRef.current = stream;
-        call.answer(stream);
-        setCalls((prev) => [...prev, call]);
-        call.on("stream", (remoteStream) => playAudio(remoteStream));
-
-        // Start timer if first call
-        if (calls.length === 0) startTimer();
-
-        // Remove call when it ends
-        call.on("close", () => handleCallEnded(call));
-      });
+      // Add to incoming calls list
+      setIncomingCalls((prev) => [...prev, call]);
     });
 
     return () => p.destroy();
-    // eslint-disable-next-line
   }, []);
+
+  const acceptCall = (call) => {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+      localStreamRef.current = stream;
+      call.answer(stream); // answer the call
+      setCalls((prev) => [...prev, call]); // store active call
+      setIncomingCalls((prev) => prev.filter((c) => c !== call)); // remove from incoming
+      call.on("stream", (remoteStream) => playAudio(remoteStream));
+      call.on("close", () => handleCallEnded(call));
+
+      // start timer if first call
+      if (calls.length === 0) startTimer();
+    });
+  };
 
   const playAudio = (stream) => {
     const audioEl = document.createElement("audio");
@@ -53,15 +57,15 @@ function App() {
       const call = peer.call(remoteId, stream);
       setCalls((prev) => [...prev, call]);
       call.on("stream", (remoteStream) => playAudio(remoteStream));
+      call.on("close", () => handleCallEnded(call));
 
       if (calls.length === 0) startTimer();
-      call.on("close", () => handleCallEnded(call));
     });
   };
 
   const handleCallEnded = (call) => {
     setCalls((prev) => prev.filter((c) => c !== call));
-    if (calls.length <= 1) stopTimer(); // stop timer if no calls left
+    if (calls.length <= 1) stopTimer();
   };
 
   const startTimer = () => {
@@ -88,12 +92,10 @@ function App() {
     calls.forEach((c) => c.close());
     setCalls([]);
     stopTimer();
-
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     }
-
     document
       .querySelectorAll("audio[id^='remote-audio-']")
       .forEach((el) => el.remove());
@@ -120,12 +122,31 @@ function App() {
         Call
       </button>
 
+      {/* Incoming Calls */}
+      {incomingCalls.length > 0 && (
+        <div style={{ marginTop: 20 }}>
+          <h3>Incoming Calls:</h3>
+          {incomingCalls.map((call, idx) => (
+            <div key={idx} style={{ marginBottom: 8 }}>
+              Call from <strong>{call.peer}</strong>
+              <button
+                onClick={() => acceptCall(call)}
+                style={{ marginLeft: 10 }}
+              >
+                Accept
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* End Call & Duration */}
       {calls.length > 0 && (
         <>
           <button
             onClick={endCalls}
             style={{
-              marginLeft: 10,
+              marginTop: 10,
               background: "red",
               color: "#fff",
               padding: "5px 12px",
