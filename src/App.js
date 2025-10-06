@@ -11,6 +11,9 @@ function App() {
   const [callLogs, setCallLogs] = useState(
     JSON.parse(localStorage.getItem("callLogs")) || []
   );
+  const [mediaRecorder, setMediaRecorder] = useState(null);
+  const [recordedChunks, setRecordedChunks] = useState([]);
+  const [isRecording, setIsRecording] = useState(false);
 
   const localStreamRef = useRef(null);
   const timerRef = useRef(null);
@@ -38,6 +41,8 @@ function App() {
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       localStreamRef.current = stream;
       call.answer(stream);
+
+      startRecording(stream);
       setCalls((prev) => [...prev, call]);
       setIncomingCalls((prev) => prev.filter((c) => c !== call));
 
@@ -127,6 +132,46 @@ function App() {
       .forEach((el) => el.remove());
   };
 
+  const startRecording = (stream) => {
+    const recorder = new MediaRecorder(stream);
+    setMediaRecorder(recorder);
+    setRecordedChunks([]);
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) setRecordedChunks((prev) => [...prev, e.data]);
+    };
+
+    recorder.start();
+    setIsRecording(true);
+  };
+
+  const stopRecording = async () => {
+    if (!mediaRecorder) return;
+
+    mediaRecorder.stop();
+    setIsRecording(false);
+
+    mediaRecorder.onstop = async () => {
+      const blob = new Blob(recordedChunks, { type: "audio/webm" });
+
+      // Ask user for location
+      const fileHandle = await window.showSaveFilePicker({
+        suggestedName: `Call-${new Date().toISOString()}.webm`,
+        types: [
+          {
+            description: "Audio Files",
+            accept: { "audio/webm": [".webm"] },
+          },
+        ],
+      });
+
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      alert("Call recording saved ✅");
+    };
+  };
+
   return (
     <div style={{ padding: 20 }}>
       <h2>WebRTC Audio Call App</h2>
@@ -193,6 +238,19 @@ function App() {
           <span style={{ marginLeft: 20, fontWeight: "bold" }}>
             Duration: {formatTime(callDuration)}
           </span>
+
+          {!isRecording ? (
+            <button
+              onClick={() => startRecording(localStreamRef.current)}
+              style={{ marginLeft: 10 }}
+            >
+              Start Recording
+            </button>
+          ) : (
+            <button onClick={stopRecording} style={{ marginLeft: 10 }}>
+              Stop & Save Recording
+            </button>
+          )}
         </div>
       )}
 
