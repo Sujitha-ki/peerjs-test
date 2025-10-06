@@ -18,6 +18,7 @@ function App() {
   const localStreamRef = useRef(null);
   const timerRef = useRef(null);
   const callStartTimeRef = useRef(null);
+  const remoteStreamsRef = useRef([]);
 
   useEffect(() => {
     const savedId = localStorage.getItem("myPeerId");
@@ -70,11 +71,20 @@ function App() {
   };
 
   const playAudio = (stream) => {
+    remoteStreamsRef.current.push(stream);
+
     const audioEl = document.createElement("audio");
     audioEl.srcObject = stream;
     audioEl.autoplay = true;
     audioEl.id = "remote-audio-" + Math.random();
     document.body.appendChild(audioEl);
+
+    // If already recording, update the recording stream
+    if (isRecording && localStreamRef.current) {
+      startRecording(
+        mergeStreams(localStreamRef.current, remoteStreamsRef.current)
+      );
+    }
   };
 
   const handleCallEnded = (call) => {
@@ -132,8 +142,23 @@ function App() {
       .forEach((el) => el.remove());
   };
 
+  const mergeStreams = (localStream, remoteStreams) => {
+    const combined = new MediaStream();
+
+    // Add local tracks
+    localStream.getTracks().forEach((track) => combined.addTrack(track));
+
+    // Add remote tracks
+    remoteStreams.forEach((stream) => {
+      stream.getTracks().forEach((track) => combined.addTrack(track));
+    });
+
+    return combined;
+  };
+
   const startRecording = (stream) => {
-    const recorder = new MediaRecorder(stream);
+    const combinedStream = mergeStreams(stream, remoteStreamsRef.current);
+    const recorder = new MediaRecorder(combinedStream);
     setMediaRecorder(recorder);
     setRecordedChunks([]);
 
