@@ -5,10 +5,10 @@ function App() {
   const [peer, setPeer] = useState(null);
   const [myId, setMyId] = useState("");
   const [remoteIds, setRemoteIds] = useState([]);
+  const [calls, setCalls] = useState([]); // store active call objects
   const localStreamRef = useRef(null);
 
   useEffect(() => {
-    // Create Peer
     const p = new Peer();
     setPeer(p);
 
@@ -21,7 +21,8 @@ function App() {
     p.on("call", (call) => {
       navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
         localStreamRef.current = stream;
-        call.answer(stream); // answer call with local audio
+        call.answer(stream);
+        setCalls((prev) => [...prev, call]); // store call
         call.on("stream", (remoteStream) => playAudio(remoteStream));
       });
     });
@@ -34,16 +35,36 @@ function App() {
     const audioEl = document.createElement("audio");
     audioEl.srcObject = stream;
     audioEl.autoplay = true;
+    audioEl.id = "remote-audio-" + Math.random(); // unique id
     document.body.appendChild(audioEl);
   };
 
-  // Start call to a remote peer
+  // Start call to remote peers
   const callPeer = (remoteId) => {
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       localStreamRef.current = stream;
       const call = peer.call(remoteId, stream);
+      setCalls((prev) => [...prev, call]);
       call.on("stream", (remoteStream) => playAudio(remoteStream));
     });
+  };
+
+  // End all calls
+  const endCalls = () => {
+    // Close all PeerJS calls
+    calls.forEach((c) => c.close());
+    setCalls([]);
+
+    // Stop local audio stream
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
+
+    // Remove all remote audio elements
+    document
+      .querySelectorAll("audio[id^='remote-audio-']")
+      .forEach((el) => el.remove());
   };
 
   return (
@@ -55,7 +76,7 @@ function App() {
 
       <input
         type="text"
-        placeholder="Remote Peer ID"
+        placeholder="Remote Peer IDs (comma-separated)"
         value={remoteIds.join(",")}
         onChange={(e) => setRemoteIds(e.target.value.split(","))}
         style={{ width: 300 }}
@@ -66,6 +87,20 @@ function App() {
       >
         Call
       </button>
+
+      {calls.length > 0 && (
+        <button
+          onClick={endCalls}
+          style={{
+            marginLeft: 10,
+            background: "red",
+            color: "#fff",
+            padding: "5px 12px",
+          }}
+        >
+          End Call
+        </button>
+      )}
     </div>
   );
 }
