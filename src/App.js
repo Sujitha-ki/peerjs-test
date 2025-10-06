@@ -8,6 +8,10 @@ function App() {
   const [calls, setCalls] = useState([]); // active calls
   const [incomingCalls, setIncomingCalls] = useState([]); // pending incoming
   const [callDuration, setCallDuration] = useState(0);
+  const [callLogs, setCallLogs] = useState(
+    JSON.parse(localStorage.getItem("callLogs")) || []
+  );
+  const callStartTimeRef = useRef(null); // track start time
   const localStreamRef = useRef(null);
   const timerRef = useRef(null);
 
@@ -56,16 +60,45 @@ function App() {
       localStreamRef.current = stream;
       const call = peer.call(remoteId, stream);
       setCalls((prev) => [...prev, call]);
-      call.on("stream", (remoteStream) => playAudio(remoteStream));
-      call.on("close", () => handleCallEnded(call));
 
-      if (calls.length === 0) startTimer();
+      // start timer
+      callStartTimeRef.current = Date.now();
+
+      call.on("stream", (remoteStream) => playAudio(remoteStream));
+
+      call.on("close", () => handleCallEnded(remoteId));
     });
   };
 
-  const handleCallEnded = (call) => {
-    setCalls((prev) => prev.filter((c) => c !== call));
-    if (calls.length <= 1) stopTimer();
+  // When receiving a call
+  peer.on("call", (call) => {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+      localStreamRef.current = stream;
+      call.answer(stream);
+      setCalls((prev) => [...prev, call]);
+
+      // start timer
+      callStartTimeRef.current = Date.now();
+
+      call.on("stream", (remoteStream) => playAudio(remoteStream));
+      call.on("close", () => handleCallEnded(call.peer));
+    });
+  });
+
+  const handleCallEnded = (peerId) => {
+    const endTime = Date.now();
+    const duration = callStartTimeRef.current
+      ? Math.floor((endTime - callStartTimeRef.current) / 1000)
+      : 0;
+
+    const newLog = { peerId, duration, time: new Date().toLocaleString() };
+    const updatedLogs = [newLog, ...callLogs];
+    setCallLogs(updatedLogs);
+    localStorage.setItem("callLogs", JSON.stringify(updatedLogs));
+
+    // clean up
+    setCalls((prev) => prev.filter((c) => c.peer !== peerId));
+    callStartTimeRef.current = null;
   };
 
   const startTimer = () => {
@@ -147,6 +180,7 @@ function App() {
             onClick={endCalls}
             style={{
               marginTop: 10,
+              marginLeft: 20,
               background: "red",
               color: "#fff",
               padding: "5px 12px",
@@ -159,6 +193,22 @@ function App() {
           </span>
         </>
       )}
+
+      <div style={{ marginTop: 20 }}>
+        <h3>Call Logs</h3>
+        {callLogs.length === 0 ? (
+          <p>No calls yet.</p>
+        ) : (
+          <ul>
+            {callLogs.map((log, idx) => (
+              <li key={idx}>
+                Peer: {log.peerId} | Duration: {log.duration}s | Time:{" "}
+                {log.time}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
